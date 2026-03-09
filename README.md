@@ -1,52 +1,48 @@
-AI Booking Intent Detection Service
+# AI Booking Intent Detection Service
 
-This project provides a FastAPI-based NLP microservice that detects meeting booking intent in chat conversations and extracts user contact information in real time.
+A FastAPI-based NLP microservice that detects meeting booking intent in chat conversations and extracts user contact information in real time.
 
-The service analyzes recent chat messages between users and freelancers to determine whether the conversation indicates an intent to schedule a meeting. When booking intent is detected, the system extracts key user information required to proceed with scheduling.
+The service analyzes recent chat messages between users and freelancers to determine whether the conversation indicates an intent to schedule a meeting. When booking intent is detected, the system extracts key user details required for scheduling.
 
-The system is designed to operate as a stateless service and integrates easily with external applications (e.g., Laravel-based platforms) via a simple API.
+The system is designed to be **stateless**, lightweight, and easily integrated with external platforms.
 
-Key Features
+---
 
-Real-time meeting intent detection
+## Features
 
-Automatic extraction of:
+- Real-time **meeting intent detection**
+- Automatic extraction of:
+  - First Name
+  - Last Name
+  - Email
+- Identification of **missing user information**
+- Generation of **suggested prompts** to request missing fields
+- **Stateless architecture** (no database required)
+- Designed for **high concurrency and scalability**
+- Powered by **OpenAI API**
 
-First Name
+---
 
-Last Name
+## How It Works
 
-Email
+1. The client application sends the **latest N chat messages** (typically 10–15 messages) whenever a new message is received.
+2. The service analyzes the conversation to detect **booking intent**.
+3. If intent is detected, the system extracts available user details:
+   - First name
+   - Last name
+   - Email
+4. If required information is missing, the API returns:
+   - Which fields are missing
+   - A suggested prompt to request them
+5. The client sends updated message windows as the conversation continues.
 
-Detection of missing information
+This loop continues until all required fields are collected.
 
-Generation of suggested prompts to request missing details from the user
+---
 
-Stateless architecture (no database required)
+## Example Request
 
-Designed for high concurrency and horizontal scalability
-
-Uses OpenAI API for NLP processing
-
-How It Works
-
-The client application sends the latest N chat messages (e.g., last 10–15 messages) to the API whenever a new message is received.
-
-The service analyzes the conversation to determine if there is intent to book a meeting.
-
-If booking intent is detected, the system extracts any available user information:
-
-First name
-
-Last name
-
-Email
-
-If required fields are missing, the API returns a suggested prompt that can be sent to the user to collect the missing information.
-
-The client continues sending updated message windows as the conversation progresses, allowing the system to extract additional details in real time.
-
-Example Request
+```json
 {
   "chat_id": "12345",
   "messages": [
@@ -60,28 +56,3 @@ Example Request
     }
   ]
 }
-Example Response
-{
-  "booking_intent": true,
-  "confidence": 0.91,
-  "fields": {
-    "first_name": "John",
-    "last_name": null,
-    "email": null
-  },
-  "missing_fields": ["last_name", "email"],
-  "ask_user_message": "Great! Could you please share your last name and email so we can schedule the meeting?"
-}
-Architecture Overview
-
-FastAPI for the API layer
-
-OpenAI API for intent detection and information extraction
-
-Stateless design — no persistent storage required
-
-Sliding message window approach for efficient real-time processing
-
-Deployment
-
-The service is designed to be deployed on a lightweight cloud instance (e.g., AWS EC2) and scaled horizontally as needed.
