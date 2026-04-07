@@ -1,15 +1,17 @@
 """
 Booking Intent Detection API (final)
 
-Single API that:
-1. Detects meeting booking intent from messages (English or Arabic).
-2. If no intent → returns no intent message.
-3. If intent + incomplete info → returns missing_info_prompt; client sends more messages and calls again.
-4. If intent + complete info → checks appointment_bookings for duplicate (same person, same date, overlapping time).
-   - If conflict → returns conflict message.
-   - If no conflict → inserts booking and returns success with booking details.
+APIs that:
+1. Detect meeting booking intent from messages (English or Arabic).
+2. If no intent → return no intent message.
+3. If intent + incomplete info → return message listing missing info; client sends more messages and calls again.
+4. If intent + complete info → check appointment_bookings for duplicate (same person, same date, overlapping time).
+   - If conflict → return conflict message.
+   - If no conflict → return the extracted booking details in the response (no database insert).
 
-Uses: DeepSeek for intent + extraction; MySQL table appointment_bookings in database (e.g. giganeti_gym_management).
+No records are inserted; the database is used only for duplicate/conflict checks.
+
+Uses: DeepSeek for intent + extraction; MySQL table appointment_bookings for conflict check (e.g. giganeti_gym_management).
 """
 
 import json
@@ -57,12 +59,14 @@ def get_db_connection():
             status_code=500,
             detail="MySQL credentials not set. Set MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE in .env.",
         )
+    # Use latin1 to match typical MySQL tables; avoids "COLLATION not valid for CHARACTER SET latin1" when table is latin1
     return mysql.connector.connect(
         host=host,
         port=port,
         user=user,
         password=password,
         database=database,
+        charset="latin1",
     )
 
 
@@ -333,6 +337,7 @@ def _check_booking_conflict(conn, first_name: str, last_name: str, date_str: str
         end_norm = _normalize_time_for_db(end_time) or end_time
 
         # Overlap: existing.start_time < new.end_time AND existing.end_time > new.start_time
+        # No COLLATE: connection uses latin1 to match table charset (db cannot be changed)
         query = """
             SELECT 1 FROM appointment_bookings
             WHERE first_name = %s AND last_name = %s AND date = %s
@@ -410,8 +415,8 @@ def health():
     "/detect-booking-intent",
     response_model=DetectBookingIntentResponse,
     response_model_exclude_none=True,
-    summary="Detect booking intent, extract details, check conflicts, create booking",
-    description="Single endpoint: detects intent from messages (EN/AR). If no intent, returns message. If intent but info incomplete, returns missing_info_prompt. If intent and info complete, checks for duplicate booking (same person, date, overlapping time); if conflict returns message; if no conflict inserts into appointment_bookings and returns success.",
+    summary="Detect booking intent, extract details, check for conflicts",
+    description="Detects intent from messages (EN/AR). If no intent, returns message. If intent but info incomplete, returns missing-info message. If intent and info complete, checks the database for duplicate (same person, date, overlapping time); if conflict returns conflict message; if no conflict returns the extracted booking details in the response. Does not insert any records.",
 )
 def detect_booking_intent(request: DetectBookingIntentRequest) -> DetectBookingIntentResponse:
     client = get_deepseek_client()
@@ -474,7 +479,7 @@ def detect_booking_intent(request: DetectBookingIntentRequest) -> DetectBookingI
             extracted=extracted,
         )
 
-    # Info complete: check conflict then insert
+    # Info complete: check conflict only (no insert)
     if not first_name or not last_name or not date_str or not start_time or not end_time:
         return DetectBookingIntentResponse(
             has_meeting_intent=True,
@@ -499,15 +504,13 @@ def detect_booking_intent(request: DetectBookingIntentRequest) -> DetectBookingI
                 booking_conflict=True,
             )
 
-        booking_id = _insert_booking(conn, first_name, last_name, date_str, start_time, end_time)
+        # No conflict: return extracted data only (no insert)
         return DetectBookingIntentResponse(
             has_meeting_intent=True,
-            message="Booking created successfully.",
+            message="No conflict. Booking details are available below.",
             info_complete=True,
             extracted=extracted,
             booking_conflict=False,
-            booking_created=True,
-            booking_id=booking_id,
         )
     except MySQLError as e:
         raise HTTPException(status_code=503, detail=f"Database error: {str(e)}") from e
